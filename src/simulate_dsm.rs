@@ -58,7 +58,7 @@ use ndarray::{
 
 use num::Complex;
 
-pub struct ZKP {
+pub struct ZPK {
     pub z: Array<Complex<u64>, Ix1>,
     pub p: Array<Complex<u64>, Ix1>,
     pub k: f64,
@@ -66,7 +66,99 @@ pub struct ZKP {
 
 pub enum ModulatorType {
     ABCD(Array<f64, Ix2>),
-    NTF(ZKP),
+    NTF(ZPK),
+}
+
+pub fn tf2ss(
+    num: &Array<f64, Ix1>,
+    den: &Array<f64, Ix1>
+) -> (Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>) {
+    // num, den = normalize(num, den)   # Strips zeros, checks arrays
+    // nn = len(num.shape)
+    // if nn == 1:
+    //     num = asarray([num], num.dtype)
+    // M = num.shape[1]
+    // K = len(den)
+    // if M > K:
+    //     msg = "Improper transfer function. `num` is longer than `den`."
+    //     raise ValueError(msg)
+    // if M == 0 or K == 0:  # Null system
+    //     return (array([], float), array([], float), array([], float),
+    //             array([], float))
+
+    // # pad numerator to have same number of columns has denominator
+    // num = r_['-1', zeros((num.shape[0], K - M), num.dtype), num]
+
+    // if num.shape[-1] > 0:
+    //     D = atleast_2d(num[:, 0])
+
+    // else:
+    //     # We don't assign it an empty array because this system
+    //     # is not 'null'. It just doesn't have a non-zero D
+    //     # matrix. Thus, it should have a non-zero shape so that
+    //     # it can be operated on by functions like 'ss2tf'
+    //     D = array([[0]], float)
+
+    // if K == 1:
+    //     D = D.reshape(num.shape)
+
+    //     return (zeros((1, 1)), zeros((1, D.shape[1])),
+    //             zeros((D.shape[0], 1)), D)
+
+    // frow = -array([den[1:]])
+    // A = r_[frow, eye(K - 2, K - 1)]
+    // B = eye(K - 1, 1)
+    // C = num[:, 1:] - outer(num[:, 0], den[1:])
+    // D = D.reshape((C.shape[0], B.shape[1]))
+
+    // return A, B, C, D
+    unimplemented!();
+}
+
+pub fn zpk2tf(zpk: &ZPK) -> (Array<f64, Ix1>, Array<f64, Ix1>) {
+    // z = atleast_1d(z)
+    // k = atleast_1d(k)
+    // if len(z.shape) > 1:
+    //     temp = poly(z[0])
+    //     b = zeros((z.shape[0], z.shape[1] + 1), temp.dtype.char)
+    //     if len(k) == 1:
+    //         k = [k[0]] * z.shape[0]
+    //     for i in range(z.shape[0]):
+    //         b[i] = k[i] * poly(z[i])
+    // else:
+    //     b = k * poly(z)
+    // a = atleast_1d(poly(p))
+
+    // # Use real output if possible.  Copied from numpy.poly, since
+    // # we can't depend on a specific version of numpy.
+    // if issubclass(b.dtype.type, numpy.complexfloating):
+    //     # if complex roots are all complex conjugates, the roots are real.
+    //     roots = numpy.asarray(z, complex)
+    //     pos_roots = numpy.compress(roots.imag > 0, roots)
+    //     neg_roots = numpy.conjugate(numpy.compress(roots.imag < 0, roots))
+    //     if len(pos_roots) == len(neg_roots):
+    //         if numpy.all(numpy.sort_complex(neg_roots) ==
+    //                      numpy.sort_complex(pos_roots)):
+    //             b = b.real.copy()
+
+    // if issubclass(a.dtype.type, numpy.complexfloating):
+    //     # if complex roots are all complex conjugates, the roots are real.
+    //     roots = numpy.asarray(p, complex)
+    //     pos_roots = numpy.compress(roots.imag > 0, roots)
+    //     neg_roots = numpy.conjugate(numpy.compress(roots.imag < 0, roots))
+    //     if len(pos_roots) == len(neg_roots):
+    //         if numpy.all(numpy.sort_complex(neg_roots) ==
+    //                      numpy.sort_complex(pos_roots)):
+    //             a = a.real.copy()
+
+    // return b, a
+    
+    unimplemented!();
+}
+
+pub fn zpk2ss(zpk: &ZPK) -> (Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>) {
+    let (b, a) = zpk2tf(zpk);
+    tf2ss(&b, &a)
 }
 
 pub fn simulateDSM(
@@ -88,7 +180,7 @@ pub fn simulateDSM(
             assert_eq!(ABCD.shape()[1], nu + ABCD.shape()[0]);
             ABCD.shape()[0] - nq
         },
-        ModulatorType::NTF(ZKP { z, .. }) => z.shape()[0],
+        ModulatorType::NTF(ZPK { z, .. }) => z.shape()[0],
     };
 
     // TODO: 
@@ -112,28 +204,31 @@ pub fn simulateDSM(
             C = ABCD[order..order + nq, 0..order];
             D1 = ABCD[order..order + nq, order..order + nu];
         },
-        ModulatorType::NTF(ZKP { z, .. }) => {
+        ModulatorType::NTF(ZPK { z, .. }) => {
             // Seek a realization of -1/H
-            // A, B2, C, D2 = sp.signal.zpk2ss(ntf_p, ntf_z, -1)
-            // C=C.real
-            // // Transform the realization so that C = [1 0 0 ...]
-            // Sinv = sp.linalg.orth(np.hstack((np.transpose(C), np.eye(order))))/ \
-            //     np.linalg.norm(C)
-            // S = sp.linalg.inv(Sinv)
-            // C = np.dot(C, Sinv)
-            // if C[0, 0] < 0:
-            //     S = -S
-            //     Sinv = -Sinv
-            // A = np.asarray(S.dot(A).dot(Sinv), dtype=np.float64, order='C')
-            // B2 = np.asarray(np.dot(S, B2), dtype=np.float64, order='C')
-            // C = np.asarray(np.hstack(([[1.]], np.zeros((1,order-1)))),\
-            //     dtype=np.float64, order='C')
-            // // C=C*Sinv;
-            // // D2 = 0;
-            // // !!!! Assume stf=1
-            // B1 = -B2
-            // D1 = np.asarray(1., dtype=np.float64)
-            //B = np.hstack((B1, B2))
+            (A, B2, C, D2) = zpk2ss(ntf_p, ntf_z, -1);
+            C = C.real();
+            // Transform the realization so that C = [1 0 0 ...]
+            let Sinv = sp.linalg.orth(
+                np.hstack(
+                    (np.transpose(C), np.eye(order))
+                )
+            ) / np.linalg.norm(C);
+            let S = sp.linalg.inv(Sinv);
+            C = np.dot(C, Sinv);
+            if C[0, 0] < 0:
+                S = -S
+                Sinv = -Sinv
+            A = np.asarray(S.dot(A).dot(Sinv), dtype=np.float64, order='C')
+            B2 = np.asarray(np.dot(S, B2), dtype=np.float64, order='C')
+            C = np.asarray(np.hstack(([[1.]], np.zeros((1,order-1)))),\
+                dtype=np.float64, order='C')
+            // C=C*Sinv;
+            // D2 = 0;
+            // !!!! Assume stf=1
+            B1 = -B2
+            D1 = np.asarray(1., dtype=np.float64)
+            B = np.hstack((B1, B2))
         }
     }
     // else:
