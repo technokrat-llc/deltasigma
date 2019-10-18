@@ -13,15 +13,13 @@ use jni::objects::{JClass, JString};
 use jni::sys::jstring;
 
 // This keeps Rust from "mangling" the name and making it unique for this
-// crate.
+// crate. It is going to be called DeltaSigma.hello on the Java side.
 #[no_mangle]
-pub extern "system" fn Java_DeltaSigma_hello(env: JNIEnv,
-// This is the class that owns our static method. It's not going to be used,
-// but still must be present to match the expected signature of a static
-// native method.
-                                             class: JClass,
-                                             input: JString)
-                                             -> jstring {
+pub extern "system" fn Java_DeltaSigma_hello(
+    env: JNIEnv,
+    class: JClass,
+    input: JString
+) -> jstring {
     // First, we have to get the string out of Java. Check out the `strings`
     // module for more info on how this works.
     let input: String =
