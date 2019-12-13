@@ -54,13 +54,16 @@ use ndarray::{
     Array,
     Ix1,
     Ix2,
+    s,
+    stack,
+    Axis,
 };
 
 use num::Complex;
 
 pub struct ZPK {
-    pub z: Array<Complex<u64>, Ix1>,
-    pub p: Array<Complex<u64>, Ix1>,
+    pub z: Array<Complex<f64>, Ix1>,
+    pub p: Array<Complex<f64>, Ix1>,
     pub k: f64,
 }
 
@@ -72,7 +75,7 @@ pub enum ModulatorType {
 pub fn tf2ss(
     num: &Array<f64, Ix1>,
     den: &Array<f64, Ix1>
-) -> (Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>) {
+) -> (Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>) {
     // num, den = normalize(num, den)   # Strips zeros, checks arrays
     // nn = len(num.shape)
     // if nn == 1:
@@ -156,14 +159,14 @@ pub fn zpk2tf(zpk: &ZPK) -> (Array<f64, Ix1>, Array<f64, Ix1>) {
     unimplemented!();
 }
 
-pub fn zpk2ss(zpk: &ZPK) -> (Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>, Array<f64, Ix2>) {
+pub fn zpk2ss(zpk: &ZPK) -> (Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>) {
     let (b, a) = zpk2tf(zpk);
     tf2ss(&b, &a)
 }
 
 pub fn simulateDSM(
     u: &Array<usize, Ix2>,
-    arg2: &ModulatorType,
+    arg2: ModulatorType,
     nlev: &Array<usize, Ix2>,
     x0: &Array<f64, Ix2>,
     // int store_xn=False,
@@ -198,21 +201,19 @@ pub fn simulateDSM(
     // note that B=hstack((B1, B2))
     match arg2 {
         ModulatorType::ABCD(ABCD) => {
-            A = ABCD[0..order, 0..order];
-            B1 = ABCD[0..order, order..order + nu];
-            B2 = ABCD[0..order, order + nu..order + nu + nq];
-            C = ABCD[order..order + nq, 0..order];
-            D1 = ABCD[order..order + nq, order..order + nu];
+            A = ABCD.slice(s![0..order, 0..order]);
+            B1 = ABCD.slice(s![0..order, order..order + nu]);
+            B2 = ABCD.slice(s![0..order, order + nu..order + nu + nq]);
+            C = ABCD.slice(s![order..order + nq, 0..order]);
+            D1 = ABCD.slice(s![order..order + nq, order..order + nu]);
         },
-        ModulatorType::NTF(ZPK { z, .. }) => {
+        ModulatorType::NTF(ZPK { z, p, .. }) => {
             // Seek a realization of -1/H
-            (A, B2, C, D2) = zpk2ss(ntf_p, ntf_z, -1);
-            C = C.real();
+            let (A, B2, mut C, D2) = zpk2ss(&ZPK { z: p, p: z, k: -1.0 });
+            C = C.map(|c| c.re.into());
             // Transform the realization so that C = [1 0 0 ...]
             let Sinv = sp.linalg.orth(
-                np.hstack(
-                    (np.transpose(C), np.eye(order))
-                )
+                stack![Axis(1), (C.t(), Array::eye(order))]
             ) / np.linalg.norm(C);
             let S = sp.linalg.inv(Sinv);
             C = np.dot(C, Sinv);
