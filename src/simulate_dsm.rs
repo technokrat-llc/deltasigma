@@ -127,7 +127,7 @@ pub fn zpk2ss(zpk: &ZPK) -> (Array<f64, Ix2>, Array<f64, Ix2>, Array<Complex<f64
     tf2ss(&b, &a)
 }
 
-pub fn simulate_DSM(
+pub fn simulate_dsm_rs(
     u: &Array<f64, Ix2>,
     arg2: ModulatorType,
     nlev: &Array<u64, Ix1>,
@@ -230,4 +230,21 @@ fn ds_quantize(y: &Array<f64, Ix1>, n: &Array<u64, Ix1>) -> Array<f64, Ix1> {
 
         v.signum() * v.abs().min((n - 1) as f64)
     }))
+}
+
+use pyo3::prelude::*;
+use pyo3::wrap_pyfunction;
+
+#[pyfunction]
+/// Formats the sum of two numbers as string
+fn simulate_dsm(a: usize, b: usize) -> PyResult<String> {
+    Ok(simulate_dsm_rs(u, arg2, nlev, x0))
+}
+
+/// This module is a python module implemented in Rust.
+#[pymodule]
+fn dsrs(py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_wrapped(wrap_pyfunction!(sum_as_string))?;
+
+    Ok(())
 }
