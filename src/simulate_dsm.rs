@@ -241,26 +241,25 @@ pub fn simulateDSM(
         }
     }
 
-    // // N is number of input samples to deal with
-    // cdef int N = c_u.shape[1]
-    // // v is output vector
-    // cdef np.ndarray v = np.empty((nq, N), dtype=np.float64)
-    // cdef np.ndarray y
-    // if store_y:
-    //     // Need to store the quantizer input
-    //     y = np.empty((nq, N), dtype=np.float64)
-    // else:
-    //     y = np.empty((0,0), dtype=np.float64)
-    // cdef np.ndarray xn
-    // if store_xn:
-    //     // Need to store the state information
-    //     xn = np.empty((order, N), dtype=np.float64)
-    // cdef np.ndarray xmax
-    // if store_xmax:
-    //     // Need to keep track of the state maxima
-    //     xmax = np.abs(c_x0)
-    // else:
-    //     xmax = np.empty(0, dtype=np.float64)
+    // N is number of input samples to deal with
+    let N = u.shape()[1];
+    // v is output vector
+    let v = Array::zeros((nq, N));
+    let y = if store_y {
+        // Need to store the quantizer input
+        Array::zeros((nq, N))
+    } else {
+        Array::zeros((0,0))
+    };
+
+    // TODO: not as in original.
+    let xn = Array::zeros((order, N));
+    let xmax = if store_xmax {
+        // Need to keep track of the state maxima
+        c_x0.abs()
+    } else {
+        Array::zeros(0)
+    };
 
     // // y0 is output before the quantizer
     // cdef np.ndarray y0 = np.empty(nq, dtype=np.float64)
