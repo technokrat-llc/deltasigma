@@ -11,4 +11,4 @@ crate_type = ["cdylib"]
 jni = "0.13.1"
 ndarray = "*"
 num = "*"
-rgsl = "*"
+ndarray-linalg = "*"

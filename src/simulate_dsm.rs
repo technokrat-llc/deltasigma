@@ -52,11 +52,20 @@
 
 use ndarray::{
     Array,
+    ArrayView,
+    array,
     Ix1,
     Ix2,
+    IxDynImpl,
     s,
     stack,
     Axis,
+    Dim,
+};
+
+use ndarray_linalg::{
+    norm::Norm,
+    solve::Inverse,
 };
 
 use num::Complex;
@@ -75,7 +84,7 @@ pub enum ModulatorType {
 pub fn tf2ss(
     num: &Array<f64, Ix1>,
     den: &Array<f64, Ix1>
-) -> (Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>) {
+) -> (Array<f64, Ix2>, Array<f64, Ix2>, Array<Complex<f64>, Ix2>, Array<f64, Ix2>) {
     // num, den = normalize(num, den)   # Strips zeros, checks arrays
     // nn = len(num.shape)
     // if nn == 1:
@@ -159,7 +168,7 @@ pub fn zpk2tf(zpk: &ZPK) -> (Array<f64, Ix1>, Array<f64, Ix1>) {
     unimplemented!();
 }
 
-pub fn zpk2ss(zpk: &ZPK) -> (Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>, Array<Complex<f64>, Ix2>) {
+pub fn zpk2ss(zpk: &ZPK) -> (Array<f64, Ix2>, Array<f64, Ix2>, Array<Complex<f64>, Ix2>, Array<f64, Ix2>) {
     let (b, a) = zpk2tf(zpk);
     tf2ss(&b, &a)
 }
@@ -189,71 +198,48 @@ pub fn simulateDSM(
     // TODO: 
     assert_eq!(x0.shape()[0], order);
 
-    let x0_temp = Array::zeros(x0.shape());
+    let x0_temp: Array<f64, Dim<IxDynImpl>> = Array::zeros(x0.shape());
 
     // cdef np.ndarray A, B1, B2, C, D1
-    let mut A;
-    let mut B1;
-    let mut B2;
-    let mut C;
-    let mut D1;
+    let mut A: Array<f64, Ix2>;
+    let mut B1: Array<f64, Ix2>;
+    let mut B2: Array<f64, Ix2>;
+    let mut C: Array<f64, Ix2>;
+    let mut D1: Array<f64, Ix2>;
+    let mut B: Array<f64, Ix2> = array![[]];
     // Build ISO Model
     // note that B=hstack((B1, B2))
     match arg2 {
         ModulatorType::ABCD(ABCD) => {
-            A = ABCD.slice(s![0..order, 0..order]);
-            B1 = ABCD.slice(s![0..order, order..order + nu]);
-            B2 = ABCD.slice(s![0..order, order + nu..order + nu + nq]);
-            C = ABCD.slice(s![order..order + nq, 0..order]);
-            D1 = ABCD.slice(s![order..order + nq, order..order + nu]);
+            A = ABCD.slice(s![0..order, 0..order]).to_owned();
+            B1 = ABCD.slice(s![0..order, order..order + nu]).to_owned();
+            B2 = ABCD.slice(s![0..order, order + nu..order + nu + nq]).to_owned();
+            C = ABCD.slice(s![order..order + nq, 0..order]).to_owned();
+            D1 = ABCD.slice(s![order..order + nq, order..order + nu]).to_owned();
         },
         ModulatorType::NTF(ZPK { z, p, .. }) => {
             // Seek a realization of -1/H
-            let (A, B2, mut C, D2) = zpk2ss(&ZPK { z: p, p: z, k: -1.0 });
-            C = C.map(|c| c.re.into());
+            let (A, B2, mut C_, D2) = zpk2ss(&ZPK { z: p, p: z, k: -1.0 });
+            C = C_.map(|c| c.re.into());
             // Transform the realization so that C = [1 0 0 ...]
-            let Sinv = sp.linalg.orth(
-                stack![Axis(1), (C.t(), Array::eye(order))]
-            ) / np.linalg.norm(C);
-            let S = sp.linalg.inv(Sinv);
-            C = np.dot(C, Sinv);
-            if C[0, 0] < 0:
-                S = -S
-                Sinv = -Sinv
-            A = np.asarray(S.dot(A).dot(Sinv), dtype=np.float64, order='C')
-            B2 = np.asarray(np.dot(S, B2), dtype=np.float64, order='C')
-            C = np.asarray(np.hstack(([[1.]], np.zeros((1,order-1)))),\
-                dtype=np.float64, order='C')
+            let mut Sinv = crate::linalg::orth(&stack![Axis(1), C.t(), Array::eye(order)]).to_owned() / C.norm();
+            let mut S = Sinv.inv().unwrap();
+            C = C.dot(&Sinv);
+            if C[[0, 0]] < 0.0 {
+                S = -S;
+                Sinv = -Sinv;
+            }
+            A = S.dot(&A).dot(&Sinv);
+            B2 = S.dot(&B2);
+            C = stack![Axis(1), array![[1.]], Array::zeros((1, order - 1))];
             // C=C*Sinv;
             // D2 = 0;
             // !!!! Assume stf=1
-            B1 = -B2
-            D1 = np.asarray(1., dtype=np.float64)
-            B = np.hstack((B1, B2))
+            B1 = -B2;
+            D1 = array![[1.0]];
+            B = stack![Axis(1), B1, B2];
         }
     }
-    // else:
-    //     // Seek a realization of -1/H
-    //     A, B2, C, D2 = sp.signal.zpk2ss(ntf_p, ntf_z, -1)
-    //     C=C.real
-    //     // Transform the realization so that C = [1 0 0 ...]
-    //     Sinv = sp.linalg.orth(np.hstack((np.transpose(C), np.eye(order))))/ \
-    //         np.linalg.norm(C)
-    //     S = sp.linalg.inv(Sinv)
-    //     C = np.dot(C, Sinv)
-    //     if C[0, 0] < 0:
-    //         S = -S
-    //         Sinv = -Sinv
-    //     A = np.asarray(S.dot(A).dot(Sinv), dtype=np.float64, order='C')
-    //     B2 = np.asarray(np.dot(S, B2), dtype=np.float64, order='C')
-    //     C = np.asarray(np.hstack(([[1.]], np.zeros((1,order-1)))),\
-    //         dtype=np.float64, order='C')
-    //     // C=C*Sinv;
-    //     // D2 = 0;
-    //     // !!!! Assume stf=1
-    //     B1 = -B2
-    //     D1 = np.asarray(1., dtype=np.float64)
-    //     //B = np.hstack((B1, B2))
 
     // // N is number of input samples to deal with
     // cdef int N = c_u.shape[1]
