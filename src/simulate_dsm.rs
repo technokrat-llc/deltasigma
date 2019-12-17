@@ -178,9 +178,6 @@ pub fn simulateDSM(
     arg2: ModulatorType,
     nlev: &Array<usize, Ix2>,
     x0: &Array<f64, Ix2>,
-    // int store_xn=False,
-    // int store_xmax=False,
-    // int store_y=False
 ) {
     let nu = u.shape()[0];
     let nq = nlev.shape()[0];
@@ -313,4 +310,77 @@ pub fn simulateDSM(
     //     xn = c_x0
     // return v.squeeze(), xn.squeeze(), xmax, y.squeeze()
 
+}
+
+pub fn simulateDSM2(
+    u: &Array<f64, Ix2>,
+    arg2: ModulatorType,
+    nlev: &Array<usize, Ix2>,
+    x0: &Array<f64, Ix2>,
+) {
+    if !(u.shape().iter().max() == array![u.shape()].product()) {
+        log::warn!("Multiple input delta sigma structures have had little testing.");
+    }
+
+    let nu = u.shape()[0];
+    let nq = nlev.shape()[0];
+
+    let order = match arg2 {
+        // This should be ensured by the type system and only be required in rust.
+        ModulatorType::ABCD(ABCD) => {
+            // TODO:
+            assert_eq!(ABCD.shape()[1], nu + ABCD.shape()[0]);
+            ABCD.shape()[0] - nq
+        },
+        ModulatorType::NTF(ZPK { z, .. }) => z.shape()[0],
+    };
+
+    let N = u.shape()[1];
+    let v = Array::zeros((nq, N));
+    let y = Array::zeros((nq, N));
+    let xn = Array::zeros((order, N));
+    let xmax = x0.mapv(f64::abs);
+
+    match arg2 {
+        ModulatorType::ABCD(ABCD) => {
+            let A = ABCD.slice(s![..order, ..order]).to_owned();
+            let B = ABCD.slice(s![..order, order..order + nu + nq]).to_owned();
+            let C = ABCD.slice(s![order..order + nq, ..order]).to_owned();
+            let D1 = ABCD.slice(s![order..order + nq, order..order + nu]).to_owned();
+
+            for i in 0..N {
+                // y0 needs to be cast to real because ds_quantize needs real
+                // inputs. If quantization were defined for complex numbers,
+                // this cast could be removed
+                let y0 = C.dot(x0) + D1.dot(&u.slice(s![.., i]));
+                y.slice_mut(s![.., i]).assign(&y0);
+                v[:, i] = ds_quantize(y0, nlev)
+                x0 = np.dot(A, x0) + np.dot(B, np.concatenate((u[:, i], v[:, i])))
+                xn[:, i] = np.real_if_close(x0.T)
+                xmax = np.max(np.hstack((np.abs(x0).reshape((-1, 1)), xmax.reshape((-1, 1)))),
+                                axis=1, keepdims=True)
+            }
+        },
+    }
+
+    return v.squeeze(), xn.squeeze(), xmax, y.squeeze()
+
+def ds_quantize(y, n):
+    """v = ds_quantize(y,n)
+    Quantize y to:
+        
+    * an odd integer in [-n+1, n-1], if n is even, or
+    * an even integer in [-n, n], if n is odd.
+    This definition gives the same step height for both mid-rise
+    and mid-tread quantizers.
+    """
+    v = np.zeros(y.shape)
+    for qi in range(n.shape[0]): 
+        if n[qi] % 2 == 0: # mid-rise quantizer
+            v[qi] = 2*np.floor(0.5*y[qi]) + 1
+        else: # mid-tread quantizer
+            v[qi] = 2*np.floor(0.5*(y[qi] + 1))
+        L = n[qi] - 1
+        v[qi] = np.sign(v[qi])*np.min((np.abs(v[qi]), L))
+    return v
 }
