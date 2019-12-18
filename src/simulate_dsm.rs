@@ -24,6 +24,15 @@ use itertools::izip;
 
 use std::iter::FromIterator;
 
+use pyo3::{
+    types::PyTuple,
+};
+
+use pyo3::prelude::*;
+use pyo3::wrap_pyfunction;
+
+use numpy::{IntoPyArray, PyArray2, PyArray1};
+
 pub struct ZPK {
     pub z: Array<Complex<f64>, Ix1>,
     pub p: Array<Complex<f64>, Ix1>,
@@ -232,13 +241,18 @@ fn ds_quantize(y: &Array<f64, Ix1>, n: &Array<u64, Ix1>) -> Array<f64, Ix1> {
     }))
 }
 
-use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
-
 #[pyfunction]
 /// Formats the sum of two numbers as string
-fn simulate_dsm(a: usize, b: usize) -> PyResult<String> {
-    Ok(simulate_dsm_rs(u, arg2, nlev, x0))
+fn simulate_dsm(py: Python, u: &PyArray2<f64>, arg2: &PyArray2<f64>, nlev: &PyArray1<u64>, x0: &PyArray1<f64>)
+-> Py<PyTuple> {
+    
+    let (v, xn, xmax, y) = simulate_dsm_rs(
+        &u.as_array().to_owned(),
+        ModulatorType::ABCD(arg2.as_array().to_owned()),
+        &nlev.as_array().to_owned(),
+        x0.as_array().to_owned()
+    );
+    Py::new(py, PyTuple::new(py, [v.into_pyarray(py).to_owned(), xn.into_pyarray(py).to_owned(), xmax.into_pyarray(py).to_owned(), y.into_pyarray(py).to_owned()]).to_owned()).unwrap()
 }
 
 /// This module is a python module implemented in Rust.
